@@ -1,68 +1,61 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Traffic Light</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      height: 100%;
-      width: 100%;
-      overflow: hidden;
+    body {
+      background: #111;
+      color: white;
+      font-family: sans-serif;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
-      background-color: #111;
+      justify-content: center;
+      height: 100vh;
     }
     .traffic-light {
       display: flex;
       flex-direction: column;
-      align-items: center;
       gap: 3vw;
-      width: 95vw;
       max-width: 400px;
-      height: auto;
+      width: 95vw;
     }
     .light {
       width: 60%;
-      aspect-ratio: 1 / 1;
+      aspect-ratio: 1/1;
       border-radius: 50%;
       background-color: #222;
       transition: background-color 0.7s;
     }
-    .light.red.active { background-color: red; }
-    .light.orange.active { background-color: orange; }
-    .light.green.active { background-color: limegreen; }
-    .light.red { background-color: #550000; }
-    .light.orange { background-color: #553000; }
-    .light.green { background-color: #003300; }
-
-    body.offline::before {
-      content: "ESP32 is offline — retrying...";
-      position: absolute;
-      top: 1rem;
-      background: rgba(255, 0, 0, 0.7);
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 4px;
-      font-size: 1.2rem;
+    .red.active { background-color: red; }
+    .orange.active { background-color: orange; }
+    .green.active { background-color: limegreen; }
+    .red { background-color: #550000; }
+    .orange { background-color: #553000; }
+    .green { background-color: #003300; }
+    #status {
+      margin-top: 1rem;
+      font-size: 1rem;
     }
   </style>
 </head>
 <body>
+
   <div class="traffic-light">
     <div class="light red" data-id="3"></div>
     <div class="light orange" data-id="2"></div>
     <div class="light green" data-id="1"></div>
   </div>
+  <div id="status">Loading...</div>
 
   <script>
-    const ESP_HOST = "http://trafficlight.local";
     const lights = document.querySelectorAll('.light');
+    let ESP_HOST = "";
     let lastKnownState = null;
-    let buttonsLocked = false;
-    let isOnline = true;
+    let isOnline = false;
+
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyq9baUSPWN1ZGbGwM_9UBHZ2yDeO2lyrz7uJJWhsc8CmpQOh8YndZ4plV1hVpJq8yM/exec";
 
     function setActiveLight(state) {
       lights.forEach(l => {
@@ -71,37 +64,36 @@
       });
     }
 
-    function setButtonsEnabled(enabled) {
-      lights.forEach(l => l.style.pointerEvents = enabled ? 'auto' : 'none');
-      buttonsLocked = !enabled;
+    function pollForUpdates() {
+      fetch(`${ESP_HOST}/state`)
+        .then(res => res.json())
+        .then(state => {
+          if (state !== lastKnownState) {
+            lastKnownState = state;
+            setActiveLight(state);
+          }
+          document.getElementById("status").textContent = `Connected to ESP at ${ESP_HOST}`;
+          isOnline = true;
+        })
+        .catch(() => {
+          document.getElementById("status").textContent = `ESP offline`;
+          isOnline = false;
+        });
+
+      setTimeout(pollForUpdates, 200);
     }
 
     function sendLightState(id) {
-      if (buttonsLocked) return;
+      if (!ESP_HOST) return;
 
-      setActiveLight(id);
-      setButtonsEnabled(false);
-
+      setActiveLight(id); // optimistic
       fetch(`${ESP_HOST}/state`, {
-        method: 'POST',
+        method: "POST",
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `value=${id}`
       })
-      .then(() => fetch(`${ESP_HOST}/state`))
-      .then(res => res.json())
-      .then(state => {
-        lastKnownState = state;
-        setActiveLight(state);
-        document.body.classList.remove("offline");
-        isOnline = true;
-      })
-      .catch(err => {
-        console.warn("ESP offline:", err);
-        document.body.classList.add("offline");
-        isOnline = false;
-      })
-      .finally(() => {
-        setButtonsEnabled(true);
+      .catch(() => {
+        document.getElementById("status").textContent = "Failed to send to ESP";
       });
     }
 
@@ -112,40 +104,30 @@
       });
     });
 
-    function pollForUpdates() {
-      fetch(`${ESP_HOST}/state`)
+    function init() {
+      document.getElementById("status").textContent = "Fetching latest ESP IP...";
+
+      fetch(GOOGLE_SCRIPT_URL)
+        .then(res => res.json())
+        .then(data => {
+          ESP_HOST = `http://${data.ip}`;
+          document.getElementById("status").textContent = `ESP detected at ${ESP_HOST}`;
+          return fetch(`${ESP_HOST}/state`);
+        })
         .then(res => res.json())
         .then(state => {
-          if (!isOnline) {
-            isOnline = true;
-            document.body.classList.remove("offline");
-          }
-
-          if (state !== lastKnownState) {
-            lastKnownState = state;
-            setActiveLight(state);
-          }
+          lastKnownState = state;
+          setActiveLight(state);
+          pollForUpdates();
         })
-        .catch(() => {
-          if (isOnline) {
-            isOnline = false;
-            document.body.classList.add("offline");
-          }
+        .catch(err => {
+          console.error("Could not reach ESP", err);
+          document.getElementById("status").textContent = "Could not reach ESP";
         });
-
-      setTimeout(pollForUpdates, 200);
     }
 
-    fetch(`${ESP_HOST}/state`)
-      .then(res => res.json())
-      .then(state => {
-        lastKnownState = state;
-        setActiveLight(state);
-        pollForUpdates();
-      })
-      .catch(() => {
-        document.body.classList.add("offline");
-      });
+    init();
   </script>
+
 </body>
 </html>
