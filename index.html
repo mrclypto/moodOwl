@@ -15,6 +15,10 @@
       padding: 15px 30px;
       font-size: 18px;
     }
+    #latest {
+      margin-top: 50px;
+      font-size: 20px;
+    }
   </style>
 </head>
 <body>
@@ -23,14 +27,18 @@
   <button onclick="logState(2)">Button 2</button>
   <button onclick="logState(3)">Button 3</button>
 
+  <div id="latest">Fetching latest state...</div>
+
   <script>
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbwekLxguC-OOqeFt_kCVWgi4l6BYm_nMDHjBZ5g0sV5Ulv_iZZxR9xDsS8KDbVDV0Z9/exec';
+
     function logState(state) {
       const data = {
         timestamp: new Date().toISOString(),
         state: state
       };
 
-      fetch('https://script.google.com/macros/s/AKfycbwekLxguC-OOqeFt_kCVWgi4l6BYm_nMDHjBZ5g0sV5Ulv_iZZxR9xDsS8KDbVDV0Z9/exec', {
+      fetch(scriptURL, {
         method: 'POST',
         mode: 'no-cors',
         headers: {
@@ -38,7 +46,26 @@
         },
         body: JSON.stringify(data)
       });
+
+      // Refresh display after short delay
+      setTimeout(fetchLatestState, 1000);
     }
+
+    function fetchLatestState() {
+      fetch(scriptURL)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("latest").innerText =
+            `Last state: ${data.state} @ ${new Date(data.timestamp).toLocaleString()}`;
+        })
+        .catch(err => {
+          console.error("Failed to fetch latest state", err);
+          document.getElementById("latest").innerText = "Failed to fetch latest state";
+        });
+    }
+
+    // Initial load
+    fetchLatestState();
   </script>
 
 </body>
