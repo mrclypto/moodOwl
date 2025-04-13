@@ -1,72 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Button Logger</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Traffic Light</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin-top: 100px;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%; width: 100%; overflow: hidden;
+      display: flex; justify-content: center; align-items: center;
+      background-color: #111;
     }
-    button {
-      display: block;
-      margin: 20px auto;
-      padding: 15px 30px;
-      font-size: 18px;
+    .traffic-light {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; 
     }
-    #latest {
-      margin-top: 50px;
-      font-size: 20px;
+    .light {
+      width: 52vw; max-width: 400px; aspect-ratio: 1 / 1;
+      border-radius: 50%; background-color: #222;
+      transition: background-color 0.7s;
+      cursor: pointer;
     }
+    .light.red.active { background-color: red; }
+    .light.orange.active { background-color: orange; }
+    .light.green.active { background-color: limegreen; }
+    .light.red { background-color: #550000; }
+    .light.orange { background-color: #553000; }
+    .light.green { background-color: #003300; }
   </style>
 </head>
 <body>
-
-  <button onclick="logState(1)">Button 1</button>
-  <button onclick="logState(2)">Button 2</button>
-  <button onclick="logState(3)">Button 3</button>
-
-  <div id="latest">Fetching latest state...</div>
+  <div class="traffic-light">
+    <div class="light red" data-id="3"></div>
+    <div class="light orange" data-id="2"></div>
+    <div class="light green" data-id="1"></div>
+  </div>
 
   <script>
     const scriptURL = 'https://script.google.com/macros/s/AKfycbwekLxguC-OOqeFt_kCVWgi4l6BYm_nMDHjBZ5g0sV5Ulv_iZZxR9xDsS8KDbVDV0Z9/exec';
+    const lights = document.querySelectorAll('.light');
+    let lastKnownState = null;
+    let buttonsLocked = false;
 
-    function logState(state) {
-      const data = {
-        timestamp: new Date().toISOString(),
-        state: state
-      };
-
-      fetch(scriptURL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
+    function setActiveLight(state) {
+      lights.forEach(l => {
+        l.classList.remove('active');
+        if (l.dataset.id == state) l.classList.add('active');
       });
-
-      // Refresh display after short delay
-      setTimeout(fetchLatestState, 1000);
     }
 
-    function fetchLatestState() {
+    function setButtonsEnabled(enabled) {
+      lights.forEach(l => l.style.pointerEvents = enabled ? 'auto' : 'none');
+      buttonsLocked = !enabled;
+    }
+
+    function sendLightState(id) {
+      if (buttonsLocked) return;
+
+      setActiveLight(id);
+      setButtonsEnabled(false);
+
+      fetch(`${scriptURL}?value=${id}`, {
+        method: 'POST'
+      })
+      .then(() => fetch(scriptURL))
+      .then(res => res.json())
+      .then(state => {
+        lastKnownState = state;
+        setActiveLight(state);
+      })
+      .catch(err => console.error("Error:", err))
+      .finally(() => setButtonsEnabled(true));
+    }
+
+    lights.forEach(light => {
+      light.addEventListener('click', () => {
+        const id = light.dataset.id;
+        sendLightState(id);
+      });
+    });
+
+    function pollForUpdates() {
       fetch(scriptURL)
         .then(res => res.json())
-        .then(data => {
-          document.getElementById("latest").innerText =
-            `Last state: ${data.state} @ ${new Date(data.timestamp).toLocaleString()}`;
+        .then(state => {
+          if (state !== lastKnownState) {
+            lastKnownState = state;
+            setActiveLight(state);
+          }
         })
         .catch(err => {
-          console.error("Failed to fetch latest state", err);
-          document.getElementById("latest").innerText = "Failed to fetch latest state";
+          console.warn("Polling error:", err);
         });
+
+      setTimeout(pollForUpdates, 2000);
     }
 
-    // Initial load
-    fetchLatestState();
+    // Initial fetch
+    fetch(scriptURL)
+      .then(res => res.json())
+      .then(state => {
+        lastKnownState = state;
+        setActiveLight(state);
+        pollForUpdates();
+      });
   </script>
-
 </body>
 </html>
