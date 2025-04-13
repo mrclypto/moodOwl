@@ -36,26 +36,10 @@
     <div class="light green" data-id="1"></div>
   </div>
 
-  <!-- Firebase SDK -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCimTdrGq59r3b2dzUcVgrKCpRvkChrayU",
-      authDomain: "moodowl-bf00b.firebaseapp.com",
-      projectId: "moodowl-bf00b",
-      storageBucket: "moodowl-bf00b.firebasestorage.app",
-      messagingSenderId: "215345077461",
-      appId: "1:215345077461:web:d2d5b12fc18bd30fcc565c",
-      measurementId: "G-TDSKLMG22K"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const docRef = doc(db, "states", "latest");
-
+  <script>
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbwekLxguC-OOqeFt_kCVWgi4l6BYm_nMDHjBZ5g0sV5Ulv_iZZxR9xDsS8KDbVDV0Z9/exec';
     const lights = document.querySelectorAll('.light');
+    let lastKnownState = null;
     let buttonsLocked = false;
 
     function setActiveLight(state) {
@@ -70,17 +54,23 @@
       buttonsLocked = !enabled;
     }
 
-    async function sendLightState(id) {
+    function sendLightState(id) {
       if (buttonsLocked) return;
+
       setActiveLight(id);
       setButtonsEnabled(false);
 
-      await setDoc(docRef, {
-        state: parseInt(id),
-        timestamp: new Date().toISOString()
-      });
-
-      setButtonsEnabled(true);
+      fetch(`${scriptURL}?value=${id}`, {
+        method: 'POST'
+      })
+      .then(() => fetch(scriptURL))
+      .then(res => res.json())
+      .then(state => {
+        lastKnownState = state;
+        setActiveLight(state);
+      })
+      .catch(err => console.error("Error:", err))
+      .finally(() => setButtonsEnabled(true));
     }
 
     lights.forEach(light => {
@@ -90,13 +80,30 @@
       });
     });
 
-    // Real-time sync with Firestore
-    onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const state = docSnap.data().state;
+    function pollForUpdates() {
+      fetch(scriptURL)
+        .then(res => res.json())
+        .then(state => {
+          if (state !== lastKnownState) {
+            lastKnownState = state;
+            setActiveLight(state);
+          }
+        })
+        .catch(err => {
+          console.warn("Polling error:", err);
+        });
+
+      setTimeout(pollForUpdates, 2000);
+    }
+
+    // Initial fetch
+    fetch(scriptURL)
+      .then(res => res.json())
+      .then(state => {
+        lastKnownState = state;
         setActiveLight(state);
-      }
-    });
+        pollForUpdates();
+      });
   </script>
 </body>
 </html>
